@@ -11,12 +11,17 @@ variable "location" {
 
 variable "github_repo" {
   type        = string
-  default     = "rohan-caizin/azure-subscription-vending-poc"
-  description = "GitHub repository (owner/name) trusted by the OIDC federated credentials. Must match exactly."
+  default     = "rohan-caizin@236310955/azure-subscription-vending-poc@1446656004"
+  description = <<-EOT
+    Repository part of the GitHub OIDC "sub" claim, exactly as GitHub presents it.
+    This repo uses GitHub's immutable-ID subject format (owner@ownerId/repo@repoId), which
+    survives renames. Older repos use plain owner/repo. If login fails with AADSTS700213,
+    copy the subject from the error message.
+  EOT
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.github_repo))
-    error_message = "github_repo must be in the form owner/repository."
+    condition     = can(regex("^[A-Za-z0-9-]+(@[0-9]+)?/[A-Za-z0-9._-]+(@[0-9]+)?$", var.github_repo))
+    error_message = "github_repo must be owner/repository or owner@ownerId/repository@repoId."
   }
 }
 

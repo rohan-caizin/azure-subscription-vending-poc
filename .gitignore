@@ -14,3 +14,4 @@ bootstrap/outputs.json
 # Local working docs (contain personal emails / tenant IDs; repo is public)
 SETUP-LOG.md
 POC-PLAN.md
+.plan

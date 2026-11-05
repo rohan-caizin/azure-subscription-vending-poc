@@ -75,8 +75,13 @@ module "landing_zone" {
       name                    = "vnet-${each.key}"
       resource_group_key      = "network"
       address_space           = each.value.network.address_space
+      tags                    = each.value.tags
       hub_network_resource_id = var.hub_vnet_id
       hub_peering_enabled     = true
+      # PoC hub has no VPN/ExpressRoute gateway. Module defaults (spoke useRemoteGateways=true,
+      # hub allowGatewayTransit=true) fail with "RemoteVnetHasNoGateways". Flip back once a gateway exists.
+      hub_peering_options_tohub   = { use_remote_gateways = false }
+      hub_peering_options_fromhub = { allow_gateway_transit = false }
       subnets = {
         app = {
           name                   = "snet-app"

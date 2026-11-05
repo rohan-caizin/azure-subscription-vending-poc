@@ -82,12 +82,11 @@ resource "azurerm_user_assigned_identity" "pipeline" {
 resource "azurerm_federated_identity_credential" "github" {
   for_each = local.federated_credentials
 
-  name                = each.value.name
-  resource_group_name = azurerm_resource_group.identity.name
-  parent_id           = azurerm_user_assigned_identity.pipeline[each.value.identity].id
-  issuer              = local.github_issuer
-  audience            = local.github_audience
-  subject             = each.value.subject
+  name                      = each.value.name
+  user_assigned_identity_id = azurerm_user_assigned_identity.pipeline[each.value.identity].id
+  issuer                    = local.github_issuer
+  audience                  = local.github_audience
+  subject                   = each.value.subject
 }
 
 resource "azurerm_role_assignment" "pipeline" {

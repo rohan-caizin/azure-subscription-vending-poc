@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (git-ignored) for local runs.
+subscription_id = "11bb48cc-dd56-4193-9458-9a65e70f8916"
+# Immutable-ID subject format (owner@ownerId/repo@repoId); see variables.tf.
+github_repo     = "rohan-caizin@236310955/azure-subscription-vending-poc@1446656004"

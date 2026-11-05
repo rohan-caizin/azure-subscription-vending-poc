@@ -1,0 +1,70 @@
+# Proposal §5: nightly drift detection. Any change made outside Terraform fails the job and opens an issue.
+name: vending-drift
+
+on:
+  schedule:
+    - cron: "30 20 * * *"   # 02:00 IST
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+env:
+  TF_VERSION: "1.16.4"
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_PLAN }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_hub_vnet_id: ${{ vars.HUB_VNET_ID }}
+
+jobs:
+  drift:
+    name: drift
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vending
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: Detect drift
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -detailed-exitcode -no-color > drift.txt 2>&1
+          code=$?
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          tail -n 40 drift.txt
+          case $code in
+            0) echo "No drift." ;;
+            2) echo "::warning::Drift detected." ;;
+            *) echo "::error::terraform plan failed."; exit 1 ;;
+          esac
+
+      - name: Open issue on drift
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let out = fs.readFileSync('vending/drift.txt', 'utf8');
+            if (out.length > 60000) out = out.slice(-60000);
+            const date = new Date().toISOString().slice(0, 10);
+            await github.rest.issues.create({
+              ...context.repo,
+              title: `Drift detected in vending (${date})`,
+              body: `Resources were changed outside Terraform.\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n\`\`\`\n${out}\n\`\`\``
+            });
+            core.setFailed('Drift detected');

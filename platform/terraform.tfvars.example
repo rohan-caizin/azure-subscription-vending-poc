@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored) for local runs.
+# Pipeline identity IDs are read from identity/ state (apply identity/ first).
+subscription_id = "11bb48cc-dd56-4193-9458-9a65e70f8916"

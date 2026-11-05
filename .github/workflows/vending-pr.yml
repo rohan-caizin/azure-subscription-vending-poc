@@ -1,0 +1,105 @@
+# Proposal §5: Validate + Plan on every pull request (read-only identity).
+name: vending-pr
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "vending/**"
+      - "schema/**"
+      - "scripts/**"
+      - ".github/workflows/vending-*.yml"
+
+permissions:
+  id-token: write       # OIDC token for Azure
+  contents: read
+  pull-requests: write  # post the plan as a PR comment
+
+concurrency:
+  group: vending-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.16.4"
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_PLAN }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_hub_vnet_id: ${{ vars.HUB_VNET_ID }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vending
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate request files (schema, CIDR overlap, naming)
+        run: |
+          pip install --quiet pyyaml jsonschema
+          python ../scripts/validate_requests.py landing-zones ../schema/landing-zone.schema.json
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: Checkov (soft-fail in PoC)
+        working-directory: .
+        run: |
+          pip install --quiet checkov
+          checkov -d vending --framework terraform --quiet --compact --soft-fail --skip-download
+
+      - name: terraform plan
+        run: |
+          terraform plan -input=false -lock-timeout=5m -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Destroy guard
+        run: |
+          terraform show -json tfplan > plan.json
+          DELETES=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
+          if [ "$DELETES" -gt 0 ]; then
+            echo "::error::Plan deletes or replaces $DELETES resource(s). Blocked by the destroy guard."
+            jq -r '.resource_changes[] | select(.change.actions | index("delete")) | "  \(.change.actions | join("/"))  \(.address)"' plan.json
+            echo "Request keys (file names) must never be renamed. Decommission by moving the file to landing-zones/decommissioned/."
+            exit 1
+          fi
+          echo "No deletes in plan."
+
+      - name: Post plan to PR
+        if: always() && hashFiles('vending/plan.txt') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- vending-plan -->';
+            let plan = fs.readFileSync('vending/plan.txt', 'utf8');
+            const summary = (plan.match(/^Plan: .*$/m) || plan.match(/^No changes\..*$/m) || ['(see details)'])[0];
+            if (plan.length > 60000) plan = plan.slice(-60000) + '\n... (truncated, see job log)';
+            const body = `${marker}\n### Terraform plan: \`vending\`\n**${summary}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\n_Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}_`;
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }

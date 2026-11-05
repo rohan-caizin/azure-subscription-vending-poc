@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored) for local runs. CI uses TF_VAR_* from GitHub variables.
+subscription_id = "11bb48cc-dd56-4193-9458-9a65e70f8916"
+hub_vnet_id     = "/subscriptions/11bb48cc-dd56-4193-9458-9a65e70f8916/resourceGroups/rg-hub-poc/providers/Microsoft.Network/virtualNetworks/vnet-hub-poc"

@@ -1,0 +1,22 @@
+# Landing-zone request. Folder = archetype (corp), file name = request key (never rename).
+location: centralindia
+
+tags:
+  Environment: Dev
+  Project: poc-app1
+  CostCentre: CC-POC
+  Owner: rohan
+
+network:
+  address_space: ["10.20.4.0/24"]
+
+access:
+  owners_group_object_id: "4c88f750-e497-4d15-99f0-d932830f635a" # grp-az-poc-app1-dev-owners
+
+budget:
+  monthly_amount: 5
+  alert_emails: ["rohan12319212026@outlook.com"]
+
+github:
+  organization: rohan-caizin
+  repository: poc-app1

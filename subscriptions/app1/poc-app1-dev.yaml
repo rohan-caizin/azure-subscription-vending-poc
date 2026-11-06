@@ -1,0 +1,28 @@
+# Landing zone inside the shared platform subscription ("adopt" mode).
+# The file path is permanent: it is the Terraform state key. Group files by team, not archetype.
+name: poc-app1-dev
+archetype: corp
+
+# Adopt this existing subscription instead of creating one. It is the platform
+# subscription, so the owners get access to rg-poc-app1-dev-* only.
+subscription_id: 11bb48cc-dd56-4193-9458-9a65e70f8916
+
+owners:
+  - 4c88f750-e497-4d15-99f0-d932830f635a # Entra group grp-az-poc-app1-dev-owners
+
+budget_monthly: 5
+budget_contacts:
+  - rohan12319212026@outlook.com
+
+network:
+  address_space: 10.20.4.0/24
+  subnets:
+    app: 10.20.4.0/25
+
+github_repo: rohan-caizin/poc-app1
+
+tags:
+  Environment: Dev
+  Project: poc-app1
+  CostCentre: CC-POC
+  Owner: rohan

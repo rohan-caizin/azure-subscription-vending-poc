@@ -4,12 +4,28 @@
 *.tfstate.*
 *.tfplan
 tfplan
+plan.json
+plan.txt
+drift.txt
+out/
 crash.log
+crash.*.log
 *.tfvars
-!*.auto.tfvars.example
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
-# Bootstrap outputs (tenant/app IDs; not secrets, but keep them out of the repo)
-bootstrap/outputs.json
+# Python
+__pycache__/
+
+# Local secrets / env
+.env
+.env.*
+
+# Commit lock files for root modules only (platform layers, stacks/subscription).
+modules/**/.terraform.lock.hcl
 
 # Local working docs (contain personal emails / tenant IDs; repo is public)
 SETUP-LOG.md

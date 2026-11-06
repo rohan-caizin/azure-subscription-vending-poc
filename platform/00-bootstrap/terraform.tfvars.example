@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (git-ignored) for local runs.
+subscription_id = "11bb48cc-dd56-4193-9458-9a65e70f8916"
+# Immutable-ID subject format (owner@ownerId/repo@repoId); see variables.tf.
+github_repo     = "rohan-caizin@236310955/azure-subscription-vending-poc@1446656004"
+
+# MCA invoice section the apply identity may create subscriptions on (same value as the
+# GitHub variable BILLING_SCOPE). Find it with:
+#   az billing invoice-section list --account-name <billingAccount> --profile-name <billingProfile> --query "[].id" -o tsv
+# billing_scope = "/providers/Microsoft.Billing/billingAccounts/<account>/billingProfiles/<profile>/invoiceSections/<section>"

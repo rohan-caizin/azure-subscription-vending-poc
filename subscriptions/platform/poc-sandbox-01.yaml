@@ -1,0 +1,20 @@
+# Test request: creates a NEW subscription (Subscription Alias API, MCA invoice section)
+# under caizin-poc-sandbox. No network, no deploy identity: the cheapest end-to-end test.
+# The file path is permanent: it is the Terraform state key.
+name: poc-sandbox-01
+display_name: PoC Sandbox 01
+archetype: sandbox
+
+owners:
+  # Reusing the app1 group for the test; give real teams their own Entra group.
+  - 4c88f750-e497-4d15-99f0-d932830f635a # Entra group grp-az-poc-app1-dev-owners
+
+budget_monthly: 5
+budget_contacts:
+  - rohan12319212026@outlook.com
+
+tags:
+  Environment: Sandbox
+  Project: poc-sandbox-01
+  CostCentre: CC-POC
+  Owner: rohan

@@ -1,32 +1,36 @@
-# Proposal §5: Approve + Apply after merge to main.
-#
-# A merge NEVER applies directly:
-#   1. guard  - fails unless environment 'poc-apply' exists WITH required reviewers
-#               (otherwise GitHub would auto-create it unprotected and apply would run unattended)
-#   2. plan   - read-only identity; saves the plan and shows it in the run summary
-#   3. apply  - waits for a reviewer to approve 'poc-apply', then applies EXACTLY the saved plan
-#               (skipped when the plan has no changes)
+# Approve + apply after merge to main. A merge NEVER applies directly:
+#   1. guard   - fails unless environment 'poc-apply' exists WITH required reviewers
+#   2. changes - which request files changed (all of them if modules/, stacks/ or config/ changed)
+#   3. plan    - read-only identity, one saved plan per request, shown in the run summary
+#   4. apply   - waits for a reviewer to approve 'poc-apply' (one approval covers every
+#                request in the run), then applies EXACTLY the saved plans
 name: vending-apply
 
 on:
   push:
     branches: [main]
     paths:
-      - "vending/**"
-  workflow_dispatch: {}
+      - "subscriptions/**"
+      - "config/**"
+      - "modules/**"
+      - "stacks/**"
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Plan and apply every request, not only changed ones"
+        type: boolean
+        default: false
 
 concurrency:
-  group: vending-apply      # one plan/apply at a time; later merges queue behind
+  group: vending-apply      # one run at a time; later merges queue behind
   cancel-in-progress: false
 
 env:
-  TF_VERSION: "1.16.4"
   TF_IN_AUTOMATION: "true"
   ARM_USE_OIDC: "true"
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-  TF_VAR_hub_vnet_id: ${{ vars.HUB_VNET_ID }}
+  TF_VAR_billing_scope: ${{ vars.BILLING_SCOPE }}
 
 jobs:
   guard:
@@ -54,123 +58,146 @@ jobs:
             }
             core.info(`poc-apply reviewers: ${reviewers.reviewers.map(r => r.reviewer.login || r.reviewer.name).join(', ')}`);
 
-  plan:
-    name: plan
+  changes:
+    name: changed requests
     needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      files: ${{ steps.changes.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Requests to apply
+        id: changes
+        env:
+          ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.all }}
+          BASE: ${{ github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          if [ "$ALL" = "true" ]; then
+            files=$(bash ci/changed-requests.sh all)
+          else
+            files=$(bash ci/changed-requests.sh "${BASE:-0000000000000000000000000000000000000000}" "$HEAD")
+          fi
+          echo "Requests: $files"
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: plan ${{ matrix.file }}
+    needs: changes
+    if: needs.changes.outputs.files != '[]'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.changes.outputs.files) }}
     env:
       ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_PLAN }}   # read-only identity (OIDC subject: ref:refs/heads/main)
-    outputs:
-      has_changes: ${{ steps.plan.outputs.has_changes }}
     defaults:
       run:
-        working-directory: vending
+        working-directory: stacks/subscription
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: ./.github/actions/terraform-init
         with:
-          python-version: "3.12"
-
-      - name: Validate request files
-        run: |
-          pip install --quiet pyyaml jsonschema
-          python ../scripts/validate_requests.py landing-zones ../schema/landing-zone.schema.json
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: terraform init
-        run: terraform init -input=false
+          request-file: ${{ matrix.file }}
 
       - name: terraform plan
         id: plan
         run: |
+          mkdir -p out
           set +e
-          terraform plan -input=false -lock-timeout=5m -detailed-exitcode -out=tfplan
+          terraform plan -input=false -lock-timeout=5m -detailed-exitcode -var="request_file=$REQUEST_PATH" -out=out/tfplan
           code=$?
           set -e
           case $code in
-            0) echo "has_changes=false" >> "$GITHUB_OUTPUT" ;;
-            2) echo "has_changes=true"  >> "$GITHUB_OUTPUT" ;;
+            0) echo "false" > out/has-changes ;;
+            2) echo "true"  > out/has-changes ;;
             *) echo "::error::terraform plan failed"; exit 1 ;;
           esac
 
-      - name: Destroy guard
-        if: steps.plan.outputs.has_changes == 'true'
+      - name: Plan gate (no deletes)
+        env:
+          REQUEST_FILE: ${{ matrix.file }}
         run: |
-          terraform show -json tfplan > plan.json
-          DELETES=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
-          if [ "$DELETES" -gt 0 ]; then
-            echo "::error::Plan deletes or replaces $DELETES resource(s). Blocked by the destroy guard."
-            jq -r '.resource_changes[] | select(.change.actions | index("delete")) | "  \(.change.actions | join("/"))  \(.address)"' plan.json
-            exit 1
-          fi
+          terraform show -json out/tfplan > plan.json
+          sh ../../ci/plan-gate.sh plan.json
 
       - name: Plan summary (review this before approving)
-        if: steps.plan.outputs.has_changes == 'true'
+        env:
+          REQUEST_FILE: ${{ matrix.file }}
         run: |
           {
-            echo "## Plan to be applied after approval"
-            echo '```'
-            terraform show -no-color tfplan | tail -c 60000
-            echo '```'
+            echo "## \`$REQUEST_FILE\`"
+            if [ "$(cat out/has-changes)" = "true" ]; then
+              echo '```'
+              terraform show -no-color out/tfplan | tail -c 60000
+              echo '```'
+            else
+              echo "No changes."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: No changes
-        if: steps.plan.outputs.has_changes == 'false'
-        run: echo "## No changes - nothing to apply" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload plan
-        if: steps.plan.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ github.run_id }}
-          path: vending/tfplan
+          name: ${{ env.ARTIFACT }}
+          path: stacks/subscription/out/
           retention-days: 1
 
   apply:
-    name: apply (requires approval)
-    needs: plan
-    if: needs.plan.outputs.has_changes == 'true'
+    name: apply ${{ matrix.file }}
+    needs: [changes, plan]
     runs-on: ubuntu-latest
     environment: poc-apply   # pauses here until a required reviewer approves
     permissions:
       id-token: write
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.changes.outputs.files) }}
     env:
       ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_APPLY }}  # apply identity (OIDC subject: environment:poc-apply)
     defaults:
       run:
-        working-directory: vending
+        working-directory: stacks/subscription
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: ./.github/actions/terraform-init
         with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
+          request-file: ${{ matrix.file }}
 
       - name: Download approved plan
         uses: actions/download-artifact@v4
         with:
-          name: tfplan-${{ github.run_id }}
-          path: vending
-
-      - name: terraform init
-        run: terraform init -input=false
+          name: ${{ env.ARTIFACT }}
+          path: stacks/subscription/out
 
       - name: terraform apply (saved plan only)
-        run: terraform apply -input=false -lock-timeout=5m tfplan
+        run: |
+          if [ "$(cat out/has-changes)" = "true" ]; then
+            terraform apply -input=false -lock-timeout=5m out/tfplan
+          else
+            echo "No changes - nothing to apply."
+          fi
 
       - name: Outputs
+        env:
+          REQUEST_FILE: ${{ matrix.file }}
         run: |
-          echo "## Landing zones" >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          terraform output -json landing_zones >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## \`$REQUEST_FILE\`"
+            echo '```json'
+            terraform output -json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

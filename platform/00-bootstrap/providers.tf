@@ -9,3 +9,6 @@ provider "azurerm" {
 provider "azapi" {
   subscription_id = var.subscription_id
 }
+
+# Microsoft Graph permissions for the pipeline identities (graph.tf). Uses `az login`.
+provider "azuread" {}

@@ -10,21 +10,24 @@ locals {
     local.has_network ? { network = { name = "rg-${local.name}-network", tags = local.tags } } : {},
   )
 
-  # People: the Entra groups in `owners`. Add or remove a person by changing group membership.
-  owner_role_assignments = local.dedicated ? {
-    for g in var.request.owners : "owner-${g}" => {
-      principal_id             = g
-      definition               = local.archetype.owner_role
+  # People: one managed group per access level (access.tf). Keys are static so the plan
+  # works before the groups exist.
+  #   dedicated subscription -> the level's role on the whole subscription
+  #   shared subscription    -> the level's role on rg-<name>-app, Reader on rg-<name>-network
+  group_role_assignments = local.dedicated ? {
+    for level, a in local.access_levels : level => {
+      principal_id             = azuread_group.access[level].object_id
+      definition               = a.role
       resource_group_scope_key = null
     }
     } : merge(
-    { for g in var.request.owners : "owner-${g}-app" => {
-      principal_id             = g
-      definition               = local.archetype.owner_role
+    { for level, a in local.access_levels : "${level}-app" => {
+      principal_id             = azuread_group.access[level].object_id
+      definition               = a.role
       resource_group_scope_key = "app"
     } },
-    { for g in(local.has_network ? var.request.owners : []) : "owner-${g}-network-read" => {
-      principal_id             = g
+    { for level, a in(local.has_network ? local.access_levels : {}) : "${level}-network-read" => {
+      principal_id             = azuread_group.access[level].object_id
       definition               = "Reader"
       resource_group_scope_key = "network"
     } },
@@ -102,10 +105,11 @@ module "vending" {
     }
   } : {}
 
-  # ---------------------------------------------------------------- RBAC (Entra groups only)
+  # ---------------------------------------------------------------- RBAC (managed groups, access.tf)
+  # principal_type = "Group" lets Azure accept the assignment before the new group has replicated.
   role_assignment_enabled = true
   role_assignments = {
-    for k, v in local.owner_role_assignments : k => merge(v, { principal_type = "Group" })
+    for k, v in local.group_role_assignments : k => merge(v, { principal_type = "Group" })
   }
 
   # ---------------------------------------------------------------- Workload identity

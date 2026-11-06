@@ -6,6 +6,10 @@ terraform {
       source  = "Azure/azapi"
       version = "~> 2.12"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.0"
+    }
   }
 
   # One state per request. The pipeline passes the key with
@@ -23,3 +27,6 @@ terraform {
 #   local -> az login (Azure CLI)
 #   CI    -> ARM_USE_OIDC / ARM_CLIENT_ID / ARM_TENANT_ID / ARM_SUBSCRIPTION_ID
 provider "azapi" {}
+
+# Entra ID access groups (modules/landing-zone/access.tf). Same ARM_* credentials.
+provider "azuread" {}

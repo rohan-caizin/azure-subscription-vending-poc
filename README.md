@@ -31,8 +31,8 @@ Azure/avm-ptn-alz-sub-vending       creates the subscription and its baseline
 ## Requesting a landing zone
 
 1. Copy an example from `subscriptions/` into your team's folder. The file name must equal `name`.
-2. Fill in `name`, `archetype`, `owners` (Entra **group** object IDs), `budget_contacts`, `tags`
-   and, if needed, `network` and `github_repo`.
+2. Fill in `name`, `archetype`, `access.owners` (people, by user principal name), `budget_contacts`,
+   `tags` and, if needed, `access.readers`, `network` and `github_repo`.
 3. Open a pull request. The pipeline validates every request and plans only the changed ones;
    each plan is posted on the PR.
 4. After merge, a reviewer approves the `poc-apply` environment and the saved plans are applied.
@@ -53,17 +53,31 @@ archetype is a one-line edit.
 
 ## Giving people access
 
-Access is granted to **Entra groups**, never to individual users.
+Access is managed **in the request file**. List people by user principal name (UPN):
 
-- **Add or remove a person:** change the membership of the group listed in `owners`. No PR, no pipeline run:
-  ```sh
-  az ad group member add --group <group-object-id> --member-id $(az ad user show --id user@domain --query id -o tsv)
-  ```
-- **Give another team access:** add its group's object ID to `owners` in a PR.
-- People from outside the tenant must be invited as guests first.
+```yaml
+access:
+  owners:            # -> group grp-lz-<name>-owners  -> Contributor
+    - jane@contoso.onmicrosoft.com
+  readers:           # -> group grp-lz-<name>-readers -> Reader (optional)
+    - joe@contoso.onmicrosoft.com
+```
 
-Each owner group gets the archetype's `owner_role` (Contributor) on the whole subscription, or,
-in adopt-shared mode, Contributor on `rg-<name>-app` and Reader on `rg-<name>-network`.
+For each level the pipeline creates and owns one Entra security group, keeps its members
+**exactly** as listed, and grants the group its role. Roles go to groups, never to individual users.
+
+- **Add or remove a person:** edit the list in a PR → plan → merge → approve. Membership is an
+  in-place change, so the plan gate does not block it.
+- **Changes made by hand** in the portal to these groups are reverted on the next apply and
+  reported by nightly drift detection.
+- **Scope:** on a dedicated subscription the roles apply to the whole subscription. In adopt-shared
+  mode owners get Contributor on `rg-<name>-app`, and every level gets Reader on `rg-<name>-network`.
+- **Unknown people** fail the plan: every UPN must exist in the tenant. People from outside the
+  tenant must be invited as guests first (manual), then listed by their guest UPN.
+- **Public repo:** the listed UPNs are visible on GitHub.
+
+The pipeline needs Microsoft Graph permissions for this (`platform/00-bootstrap/graph.tf`):
+`Group.Create` lets it manage only the groups it created, never other groups in the tenant.
 
 Role assignments made by hand in the portal are not tracked by Terraform and are not reported by drift detection.
 
@@ -97,29 +111,21 @@ cd stacks/subscription  && terraform init -backend=false && terraform test
 
 ## Platform layers (applied by hand)
 
-The pipeline cannot create the identity it signs in with or grant itself billing roles, so these
-two layers are applied by a platform admin with `az login`, in order:
+The pipeline cannot create the identity it signs in with or grant itself billing roles or Graph
+permissions, so these two layers are applied by a platform admin with `az login`, in order
+(`00-bootstrap` needs a Global Administrator for the Graph permissions):
 
 ```sh
-cd platform/00-bootstrap && terraform init && terraform apply   # identities, OIDC, billing role
+cd platform/00-bootstrap && terraform init && terraform apply   # identities, OIDC, billing role, Graph permissions
 cd platform/10-core      && terraform init && terraform apply   # management groups, policies, hub, RBAC
 ```
 
 Both read `terraform.tfvars` (copy from `terraform.tfvars.example`; git-ignored).
 
-## Migration from the single-state layout (one-time)
-
-`poc-app1-dev` was created by the old `vending/` layer (state key `vending.tfstate`).
-`stacks/subscription/migrate.tf` imports its resources into `subscriptions/app1/poc-app1-dev.tfstate`.
-The first apply also deletes and re-creates the deploy identity's role assignment (same name, same
-principal, same role), allowed once by `ci/plan-gate-allow.txt`. After that apply:
-
-1. In a follow-up PR, delete `stacks/subscription/migrate.tf`, the `legacy_import` line in
-   `stacks/subscription/tests/requests.tftest.hcl`, and the entry in `ci/plan-gate-allow.txt`.
-2. Delete the orphaned `vending.tfstate` blob from the state container.
-
 ## Known limits
 
+- The account is a **Free Trial**: Azure rejects creating new subscriptions (`AccountNeedsUpgrade`),
+  so only adopt mode works until the account is upgraded. Create mode stays in the code.
 - An individual MCA account has no Dev/Test offer, so new subscriptions use the `Production` workload.
 - The budget is subscription-scoped. In adopt-shared mode it measures the whole platform subscription.
 - `budget_start` in `config/platform.yaml` applies to every request; a request created in a later

@@ -4,11 +4,17 @@ name: poc-app1-dev
 archetype: corp
 
 # Adopt this existing subscription instead of creating one. It is the platform
-# subscription, so the owners get access to rg-poc-app1-dev-* only.
+# subscription, so access is limited to rg-poc-app1-dev-* only.
 subscription_id: 11bb48cc-dd56-4193-9458-9a65e70f8916
+# The platform subscription's management group is owned by platform/10-core (caizin-poc-platform),
+# so this landing zone must not move it into its archetype's group.
+manage_management_group: false
 
-owners:
-  - 4c88f750-e497-4d15-99f0-d932830f635a # Entra group grp-az-poc-app1-dev-owners
+# People, by user principal name. The pipeline manages the groups grp-lz-poc-app1-dev-owners
+# and -readers and keeps their members EXACTLY as listed here. Add or remove a person with a PR.
+access:
+  owners:
+    - app1dev@rohan12319212026outlook.onmicrosoft.com
 
 budget_monthly: 5
 budget_contacts:

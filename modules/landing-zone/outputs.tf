@@ -4,14 +4,26 @@ output "settings" {
     name             = local.name
     archetype        = var.request.archetype
     mode             = local.create ? "create" : (local.dedicated ? "adopt" : "adopt-shared")
-    management_group = local.management_group
+    management_group = local.create || var.request.manage_management_group ? local.management_group : "(not managed by this request)"
     access_scope     = local.dedicated ? "subscription" : "resource-groups"
     hub_peering      = local.has_network && local.archetype.hub_peering
     owner_role       = local.archetype.owner_role
     budget_monthly   = coalesce(var.request.budget_monthly, local.archetype.budget_default)
     deploy_identity  = local.has_deploy
     resource_groups  = sort([for rg in values(local.resource_groups) : rg.name])
+    access = {
+      for level, a in local.access_levels : level => {
+        group   = "grp-lz-${local.name}-${level}"
+        role    = a.role
+        members = sort(a.members)
+      }
+    }
   }
+}
+
+output "access_groups" {
+  description = "Object IDs of the managed access groups, keyed by access level."
+  value       = { for level, g in azuread_group.access : level => g.object_id }
 }
 
 output "subscription_id" {

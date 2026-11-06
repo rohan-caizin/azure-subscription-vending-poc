@@ -1,8 +1,2 @@
 # One-off exceptions to ci/plan-gate.sh: "<request file> <resource address>" per line.
 # Keep this file empty except during a reviewed migration.
-#
-# MIGRATION (delete together with stacks/subscription/migrate.tf):
-# Importing the deploy identity marks its principalId "known after apply", so its role
-# assignment (name = uuidv5(scope + principal + role)) shows as replaced. Apply deletes
-# and re-creates the SAME assignment (same name 924348a1-..., same principal, same role).
-subscriptions/app1/poc-app1-dev.yaml module.landing_zone.module.vending.module.roleassignment_umi["deploy/app_rg"].azapi_resource.this

@@ -2,7 +2,8 @@
 #
 # User-assigned managed identities + federated credentials:
 #   - no client secrets can exist (managed identities have none)
-#   - only azurerm / Azure RBAC is needed (no Entra ID admin rights)
+#   - creating them needs only azurerm / Azure RBAC; graph.tf separately grants them a few
+#     Microsoft Graph permissions (that part needs an Entra ID admin)
 #
 # Bootstrap layer: applied LOCALLY once with `az login`. The pipeline cannot create the
 # identity it signs in with.

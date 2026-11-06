@@ -11,6 +11,10 @@ location: centralindia
 # people get access to their own resource groups only, never the whole subscription.
 platform_subscription_id: 11bb48cc-dd56-4193-9458-9a65e70f8916
 
+# Object ID of the pipeline's apply identity (platform/00-bootstrap output apply_principal_id).
+# It owns every access group the pipeline creates; with Group.Create it may only manage those.
+pipeline_apply_principal_id: 75aaf35f-d0d0-4419-bd06-5a3879a3d5e6
+
 # Management group for each archetype (created by platform/10-core).
 management_groups:
   corp: caizin-poc-corp

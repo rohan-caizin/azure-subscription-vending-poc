@@ -7,6 +7,7 @@ output "management_group_ids" {
   description = "Management group names. config/platform.yaml maps archetypes to them."
   value = {
     root           = azurerm_management_group.root.name
+    platform       = azurerm_management_group.platform.name
     landingzones   = azurerm_management_group.landingzones.name
     corp           = azurerm_management_group.corp.name
     sandbox        = azurerm_management_group.sandbox.name

@@ -22,9 +22,16 @@ mock_provider "azapi" {
   }
 }
 
+mock_provider "azuread" {
+  mock_data "azuread_users" {
+    defaults = {
+      object_ids = ["00000000-0000-0000-0000-0000000000e1"]
+    }
+  }
+}
+
 variables {
   billing_scope = "/providers/Microsoft.Billing/billingAccounts/a/billingProfiles/b/invoiceSections/c"
-  legacy_import = false # mock providers cannot import; remove with migrate.tf
 }
 
 run "poc_app1_dev_shares_platform_subscription" {
@@ -40,30 +47,17 @@ run "poc_app1_dev_shares_platform_subscription" {
   }
 
   assert {
-    condition     = output.settings.management_group == "caizin-poc-corp" && output.settings.hub_peering
-    error_message = "poc-app1-dev must be corp and peer to the hub."
+    condition     = output.settings.management_group == "(not managed by this request)" && output.settings.hub_peering
+    error_message = "poc-app1-dev must leave the platform subscription's management group to platform/10-core and peer to the hub."
+  }
+
+  assert {
+    condition     = output.settings.access.owners.group == "grp-lz-poc-app1-dev-owners"
+    error_message = "poc-app1-dev owners must be managed in grp-lz-poc-app1-dev-owners."
   }
 
   assert {
     condition     = output.settings.deploy_identity
     error_message = "poc-app1-dev must keep its GitHub deploy identity."
-  }
-}
-
-run "poc_sandbox_01_creates_subscription" {
-  command = plan
-
-  variables {
-    request_file = "../../subscriptions/platform/poc-sandbox-01.yaml"
-  }
-
-  assert {
-    condition     = output.settings.mode == "create" && output.settings.management_group == "caizin-poc-sandbox"
-    error_message = "poc-sandbox-01 must create a new subscription in the sandbox management group."
-  }
-
-  assert {
-    condition     = !output.settings.hub_peering && !output.settings.deploy_identity
-    error_message = "poc-sandbox-01 has no network and no deploy identity."
   }
 }

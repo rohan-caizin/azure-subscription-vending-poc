@@ -10,6 +10,10 @@ terraform {
       source  = "Azure/azapi"
       version = "~> 2.12"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.0"
+    }
   }
 
   # State key kept from when this layer lived in identity/: moving the folder changed nothing in Azure.

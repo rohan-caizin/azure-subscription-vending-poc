@@ -1,13 +1,14 @@
 variable "platform" {
   type = object({
-    location                 = string
-    platform_subscription_id = string
-    management_groups        = map(string)
-    hub_vnet_id              = string
-    hub_has_gateway          = bool
-    budget_start             = string
-    budget_end               = string
-    default_tags             = map(string)
+    location                    = string
+    platform_subscription_id    = string
+    pipeline_apply_principal_id = string
+    management_groups           = map(string)
+    hub_vnet_id                 = string
+    hub_has_gateway             = bool
+    budget_start                = string
+    budget_end                  = string
+    default_tags                = map(string)
   })
   description = "Platform-wide values from config/platform.yaml."
 }
@@ -30,10 +31,13 @@ variable "request" {
     archetype               = string
     subscription_id         = optional(string) # adopt an existing subscription instead of creating one
     manage_management_group = optional(bool, true)
-    owners                  = list(string)
-    budget_monthly          = optional(number)
-    budget_start            = optional(string)
-    budget_contacts         = list(string)
+    access = object({
+      owners  = list(string)
+      readers = optional(list(string), [])
+    })
+    budget_monthly  = optional(number)
+    budget_start    = optional(string)
+    budget_contacts = list(string)
     network = optional(object({
       address_space = string
       subnets       = optional(map(string), {})
@@ -59,8 +63,26 @@ variable "request" {
   }
 
   validation {
-    condition     = length(var.request.owners) > 0 && alltrue([for id in var.request.owners : can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", id))])
-    error_message = "owners must list at least one Entra group object ID (lowercase GUID)."
+    condition     = var.request.subscription_id != var.platform.platform_subscription_id || !var.request.manage_management_group
+    error_message = "This request adopts the platform subscription, whose management group is owned by platform/10-core. Set manage_management_group: false."
+  }
+
+  validation {
+    condition     = length(var.request.access.owners) > 0
+    error_message = "access.owners must list at least one person."
+  }
+
+  validation {
+    condition = alltrue([
+      for upn in concat(var.request.access.owners, var.request.access.readers) :
+      can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", upn)) && lower(upn) == upn
+    ])
+    error_message = "access.owners and access.readers must be lowercase user principal names (e.g. jane@contoso.onmicrosoft.com). Guests: use their UPN as shown in Entra ID."
+  }
+
+  validation {
+    condition     = length(setintersection(toset(var.request.access.owners), toset(var.request.access.readers))) == 0 && length(distinct(concat(var.request.access.owners, var.request.access.readers))) == length(concat(var.request.access.owners, var.request.access.readers))
+    error_message = "Each person may appear only once across access.owners and access.readers."
   }
 
   validation {

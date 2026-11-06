@@ -1,5 +1,9 @@
-# Every change needs review from the platform team (proposal §5 "Approve").
+# Every change needs review from the platform team.
 *                       @rohan-caizin
-/vending/               @rohan-caizin
+/subscriptions/         @rohan-caizin
+/config/                @rohan-caizin
+/modules/               @rohan-caizin
+/stacks/                @rohan-caizin
 /platform/              @rohan-caizin
-/.github/workflows/     @rohan-caizin
+/ci/                    @rohan-caizin
+/.github/               @rohan-caizin

@@ -1,0 +1,37 @@
+name: terraform-init
+description: Install Terraform and init stacks/subscription with one request's state key.
+
+inputs:
+  request-file:
+    description: Request file, e.g. subscriptions/app1/poc-app1-dev.yaml
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.16.4"
+        terraform_wrapper: false
+
+    # Exports for later steps:
+    #   REQUEST_PATH  absolute path of the request file (-var request_file)
+    #   STATE_KEY     subscriptions/<team>/<name>.tfstate
+    #   ARTIFACT      artifact name for this request's saved plan
+    - name: terraform init
+      shell: bash
+      working-directory: stacks/subscription
+      env:
+        REQUEST_FILE: ${{ inputs.request-file }}
+      run: |
+        case "$REQUEST_FILE" in
+          subscriptions/*/*.yaml) ;;
+          *) echo "::error::Not a request file: $REQUEST_FILE"; exit 1 ;;
+        esac
+        stem="${REQUEST_FILE%.yaml}"
+        {
+          echo "REQUEST_PATH=$GITHUB_WORKSPACE/$REQUEST_FILE"
+          echo "STATE_KEY=$stem.tfstate"
+          echo "ARTIFACT=tfplan-$(echo "$stem" | tr '/' '-')"
+        } >> "$GITHUB_ENV"
+        terraform init -input=false -backend-config="key=$stem.tfstate"

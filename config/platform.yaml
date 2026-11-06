@@ -1,0 +1,31 @@
+# Platform-wide values shared by every subscription request.
+# Owned by the platform team. Requests never repeat these.
+#
+# The billing scope for NEW subscriptions is not stored here (this repo is public):
+# CI passes it as TF_VAR_billing_scope from the GitHub variable BILLING_SCOPE.
+
+location: centralindia
+
+# Subscription that hosts the platform itself (state, pipeline identities, hub).
+# A request that adopts this subscription shares it with the platform, so its
+# people get access to their own resource groups only, never the whole subscription.
+platform_subscription_id: 11bb48cc-dd56-4193-9458-9a65e70f8916
+
+# Management group for each archetype (created by platform/10-core).
+management_groups:
+  corp: caizin-poc-corp
+  sandbox: caizin-poc-sandbox
+
+# Hub network that corp archetypes peer to (platform/10-core output hub_vnet_id).
+hub_vnet_id: /subscriptions/11bb48cc-dd56-4193-9458-9a65e70f8916/resourceGroups/rg-hub-poc/providers/Microsoft.Network/virtualNetworks/vnet-hub-poc
+# Set to true only once the hub has a VPN or ExpressRoute gateway.
+hub_has_gateway: false
+
+# Budgets: first day of a month, UTC. Every request uses these dates, so changing
+# them updates every existing budget too. A request can pin its own budget_start
+# (e.g. a new request in a later month, since Azure rejects a start month that is over).
+budget_start: "2026-11-01T00:00:00Z"
+budget_end: "2027-10-31T00:00:00Z"
+
+default_tags:
+  ManagedBy: subscription-vending

@@ -1,0 +1,2 @@
+# CI runs on Linux: keep LF line endings regardless of the committer's OS.
+* text=auto eol=lf

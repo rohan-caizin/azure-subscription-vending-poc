@@ -1,0 +1,105 @@
+# Decommission ONE landing zone (manual). For a created subscription this deletes its
+# resources and CANCELS the subscription (Azure keeps it disabled for a while, then deletes it).
+# For an adopted subscription it removes only what the request created.
+#
+# Run it while the request file still exists on main, then delete the file in a PR.
+name: vending-destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_file:
+        description: "Request file to destroy, e.g. subscriptions/platform/poc-sandbox-01.yaml"
+        required: true
+        type: string
+      confirm_name:
+        description: "Type the request's name to confirm"
+        required: true
+        type: string
+
+concurrency:
+  group: vending-apply      # never overlaps an apply
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_billing_scope: ${{ vars.BILLING_SCOPE }}
+
+jobs:
+  plan:
+    name: plan destroy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_PLAN }}
+    defaults:
+      run:
+        working-directory: stacks/subscription
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm name
+        env:
+          REQUEST_FILE: ${{ inputs.request_file }}
+          CONFIRM: ${{ inputs.confirm_name }}
+        run: |
+          test -f "$GITHUB_WORKSPACE/$REQUEST_FILE" || { echo "::error::$REQUEST_FILE not found on main"; exit 1; }
+          name=$(grep -E '^name:' "$GITHUB_WORKSPACE/$REQUEST_FILE" | head -1 | awk '{print $2}')
+          [ "$name" = "$CONFIRM" ] || { echo "::error::confirm_name '$CONFIRM' does not match '$name'"; exit 1; }
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          request-file: ${{ inputs.request_file }}
+
+      - name: terraform plan -destroy
+        env:
+          REQUEST_FILE: ${{ inputs.request_file }}
+        run: |
+          mkdir -p out
+          terraform plan -destroy -input=false -lock-timeout=5m -var="request_file=$REQUEST_PATH" -out=out/tfplan
+          {
+            echo "## Destroy \`$REQUEST_FILE\` (approve only if this is intended)"
+            echo '```'
+            terraform show -no-color out/tfplan | tail -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-destroy
+          path: stacks/subscription/out/
+          retention-days: 1
+
+  apply:
+    name: destroy (requires approval)
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: poc-apply
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID_APPLY }}
+    defaults:
+      run:
+        working-directory: stacks/subscription
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          request-file: ${{ inputs.request_file }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}-destroy
+          path: stacks/subscription/out
+
+      - name: terraform apply (saved destroy plan)
+        run: terraform apply -input=false -lock-timeout=5m out/tfplan
